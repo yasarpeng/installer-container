@@ -1,6 +1,9 @@
 # 容器运行时安装器
 
-一个兼容多种Linux发行版的容器运行时安装工具，支持Docker和Containerd的自动化安装。
+一个兼容多种Linux发行版的容器运行时安装工具，支持 Docker 和 nerdctl (containerd) 两种方案的自动化安装。
+
+> 说明：Docker 与 nerdctl 底层都依赖 containerd。这里的两种方案是按用户实际使用的命令行工具区分的：
+> 一种使用 `docker` / `docker-compose`，另一种使用 `nerdctl`。
 
 ## 🚀 主要特性
 
@@ -63,7 +66,7 @@ bash install.sh
 # 安装Docker (指定版本和存储路径)
 bash docker/install.sh /var/lib/docker 24.0.9
 
-# 安装Containerd (指定版本和存储路径)
+# 安装 nerdctl (containerd) (指定版本和存储路径)
 bash containerd/install.sh /data/containerd 1.7.7
 
 # 安装后授权用户
@@ -89,7 +92,7 @@ sudo bash tools/authorize_user.sh -u username
 - 25.0.5
 - 26.1.4
 
-### Containerd (nerdctl-full)
+### nerdctl (nerdctl-full 包)
 - 1.7.6 (默认)
 - 1.7.7
 - 2.0.0
@@ -114,8 +117,8 @@ sudo bash tools/authorize_user.sh -u username
 - docker-compose自动安装
 - 用户权限配置
 
-### Containerd安装特性
-- 使用nerdctl-full包 (包含containerd + nerdctl + buildkit)
+### nerdctl 安装特性
+- 使用 nerdctl-full 包 (包含 containerd + nerdctl + buildkit)
 - 支持多架构下载
 - 自动配置config.toml
 - 支持国内镜像源
@@ -178,7 +181,7 @@ bash user_manager.sh
 # 卸载Docker
 bash docker/uninstall.sh
 
-# 卸载Containerd
+# 卸载 nerdctl (containerd)
 bash containerd/uninstall.sh
 
 # 完全卸载 (包括配置)
@@ -260,9 +263,9 @@ journalctl -u containerd -f
 │   ├── install.sh          # Docker安装脚本
 │   ├── uninstall.sh        # Docker卸载脚本
 │   └── *.service           # systemd服务文件
-├── containerd/             # Containerd相关
-│   ├── install.sh          # Containerd安装脚本
-│   └── uninstall.sh        # Containerd卸载脚本
+├── containerd/             # nerdctl (containerd) 相关
+│   ├── install.sh          # nerdctl 安装脚本
+│   └── uninstall.sh        # nerdctl 卸载脚本
 └── tools/                  # 工具脚本
     ├── common.sh           # 通用函数库
     ├── compatibility_test.sh  # 兼容性测试

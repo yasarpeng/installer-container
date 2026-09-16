@@ -62,17 +62,17 @@ install_runtime() {
     local rootdir="$2"
     local version="$3"
 
-    ui_step "部署容器运行时: $choice"
-    ui_kv "运行时" "$choice"
+    ui_step "部署容器客户端: $choice"
+    ui_kv "工具" "$choice"
     ui_kv "存储路径" "$rootdir"
     [ -n "$version" ] && ui_kv "版本" "$version"
 
     local rc=0
     case "$choice" in
-        dockerd)
+        docker)
             bash "$parent_path/docker/install.sh" "$rootdir" "$version" || rc=$?
         ;;
-        containerd)
+        nerdctl)
             bash "$parent_path/containerd/install.sh" "$rootdir" "$version" || rc=$?
         ;;
     esac
@@ -152,19 +152,19 @@ post_install_authorization() {
     done
 }
 
-# 定义容器运行时选项
+# 定义容器运行时选项 (key 为用户使用的命令行工具名)
 declare -A runtimes=(
-    ["dockerd"]="/data/laiye/dockerd"
-    ["containerd"]="/data/laiye/containerd"
+    ["docker"]="/data/laiye/docker"
+    ["nerdctl"]="/data/laiye/containerd"
 )
 
 # 定义容器版本
-declare -a dockerd_versions=("19.03.15" "20.10.24" "24.0.9" "25.0.5" "26.1.4")
-declare -a containerd_versions=("1.7.6" "1.7.7" "2.0.0" "2.0.2" "2.0.3")
+declare -a docker_versions=("19.03.15" "20.10.24" "24.0.9" "25.0.5" "26.1.4")
+declare -a nerdctl_versions=("1.7.6" "1.7.7" "2.0.0" "2.0.2" "2.0.3")
 
 # 选择容器运行时
 choice_runtime() {
-    underline "请选择您想要安装的容器运行时:"
+    underline "请选择您想要安装的容器工具 (docker / nerdctl):"
     PS3=$'\033[32m输入选项编号: \033[0m'
     
     select runtime in "${!runtimes[@]}" "退出"; do
@@ -184,10 +184,10 @@ choice_version() {
     local service="$1"
     local versions
     
-    if [[ "$service" == "dockerd" ]]; then
-        versions=("${dockerd_versions[@]}")
+    if [[ "$service" == "docker" ]]; then
+        versions=("${docker_versions[@]}")
     else
-        versions=("${containerd_versions[@]}")
+        versions=("${nerdctl_versions[@]}")
     fi
     
     underline "请选择 $service 的版本:"
@@ -208,7 +208,7 @@ choice_rootdir() {
     local rootdir="$2"
     
     while true; do
-        note "当前选择的运行时: $service"
+        note "当前选择的工具: $service"
         note "默认存储路径: $rootdir"
         underline "请确认是否继续安装: "
         
