@@ -7,28 +7,53 @@ parent_path="$(cd "$(dirname "$0")" && pwd)"
 source "$parent_path/tools/common.sh"
 
 initialize() {
+    # 欢迎横幅
+    ui_banner "容器运行时安装器" "Container Runtime Installer"
+
     # 系统检测和初始化
-    h1 "系统兼容性检查"
+    STEP_TOTAL=3
+    STEP_CURRENT=0
+
+    ui_step "系统兼容性检查"
     detect_system
-    note "检测到的系统信息:"
-    note "  架构: $ARCH"
-    note "  发行版: $DISTRO $VERSION"
-    note "  包管理器: $PKG_MANAGER"
-    
+    ui_box "检测到的系统信息" \
+        "架构:     $ARCH" \
+        "发行版:   $DISTRO $VERSION" \
+        "包管理器: $PKG_MANAGER"
+    ui_summary_add ok "系统检测" "$DISTRO $VERSION ($ARCH)"
+
     # 检查必要工具
     # check_dependencies
-    
+
     # 测试网络连接
     # test_network || warn "网络连接可能存在问题，继续安装但可能需要手动下载"
-    
+
     # 执行系统初始化脚本
-    h1 "系统初始化配置"
-    bash "$parent_path/tools/config_limits.sh"
-    bash "$parent_path/tools/disable_swap.sh"
-    bash "$parent_path/tools/enable_br_netfilter.sh"
-    bash "$parent_path/tools/enable_ipv4_forward.sh"
-    bash "$parent_path/tools/enable_ipvs.sh"
-    bash "$parent_path/tools/disable_firewall.sh" || true
+    ui_step "系统初始化配置"
+    local init_scripts=(
+        "config_limits.sh:配置系统资源限制"
+        "disable_swap.sh:禁用 swap"
+        "enable_br_netfilter.sh:启用 br_netfilter 模块"
+        "enable_ipv4_forward.sh:启用 IPv4 转发"
+        "enable_ipvs.sh:启用 IPVS"
+        "disable_firewall.sh:禁用防火墙"
+    )
+    local total=${#init_scripts[@]}
+    local idx=0 ok_count=0
+    local entry script label
+    for entry in "${init_scripts[@]}"; do
+        script="${entry%%:*}"
+        label="${entry#*:}"
+        idx=$((idx + 1))
+        if bash "$parent_path/tools/$script" >/dev/null 2>&1; then
+            ui_ok "$label"
+            ok_count=$((ok_count + 1))
+        else
+            ui_fail "$label (已跳过)"
+        fi
+        ui_progress "$idx" "$total" "系统初始化"
+    done
+    ui_summary_add ok "系统初始化" "$ok_count/$total 项配置完成"
 }
 
 # 安装容器运行时的函数
@@ -36,19 +61,37 @@ install_runtime() {
     local choice="$1"
     local rootdir="$2"
     local version="$3"
-    
+
+    ui_step "部署容器运行时: $choice"
+    ui_kv "运行时" "$choice"
+    ui_kv "存储路径" "$rootdir"
+    [ -n "$version" ] && ui_kv "版本" "$version"
+
+    local rc=0
     case "$choice" in
         dockerd)
-            bash "$parent_path/docker/install.sh" "$rootdir" "$version"
+            bash "$parent_path/docker/install.sh" "$rootdir" "$version" || rc=$?
         ;;
         containerd)
-            bash "$parent_path/containerd/install.sh" "$rootdir" "$version"
+            bash "$parent_path/containerd/install.sh" "$rootdir" "$version" || rc=$?
         ;;
     esac
-    
-    # 安装完成后询问是否授权普通用户
-    note "安装完成，如果需要授权普通用户请执行脚本: $parent_path/tools/authorize_user.sh"
-    # post_install_authorization "$choice"
+
+    if [ "$rc" -eq 0 ]; then
+        ui_summary_add ok "$choice 部署" "存储路径 $rootdir"
+    else
+        ui_summary_add fail "$choice 部署" "退出码 $rc"
+    fi
+
+    # 渲染部署结果仪表盘
+    ui_summary_render "部署结果摘要"
+
+    if [ "$rc" -eq 0 ]; then
+        ui_box "后续操作" \
+            "如需授权普通用户免 sudo 使用容器，请执行:" \
+            "  sudo bash $parent_path/tools/authorize_user.sh"
+    fi
+    return "$rc"
 }
 
 # 安装后授权

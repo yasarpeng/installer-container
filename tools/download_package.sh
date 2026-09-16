@@ -68,27 +68,83 @@ choice_runtime() {
 downloader() {
     local service=$1
     local version=$2
+    ui_banner "安装包下载器" "Package Downloader · ${arch}"
     case "$service" in
         "docker")
             url="https://download.docker.com/linux/static/stable/${arch}/docker-${version}.tgz"
             url_rootless_extras="https://download.docker.com/linux/static/stable/${arch}/docker-rootless-extras-${version}.tgz"
-            
+
             # 根据 Docker 版本选择兼容的 Docker Compose 版本
             local compose_version=$(get_compose_version "$version")
             url_compose="https://github.com/docker/compose/releases/download/v${compose_version}/docker-compose-linux-${arch}"
-            wget -T 15 -c ${url} -P ${grandparent_path}/docker/${arch}/
-            wget -T 15 -c ${url_rootless_extras} -P ${grandparent_path}/docker/${arch}/
-            wget -T 15 -c ${url_compose} -P ${grandparent_path}/docker/${arch}/
-            mv ${grandparent_path}/docker/${arch}/docker-compose-linux-${ARCH} ${grandparent_path}/docker/${arch}/docker-compose
-            chmod +x ${grandparent_path}/docker/${arch}/docker-compose
-            success "下载完成，存储路径：${grandparent_path}/docker/${arch}/"
+
+            local dest="${grandparent_path}/docker/${arch}"
+            mkdir -p "$dest"
+
+            ui_kv "运行时" "docker"
+            ui_kv "版本" "$version"
+            ui_kv "compose 版本" "$compose_version"
+            ui_kv "目标目录" "$dest"
+
+            STEP_TOTAL=3; STEP_CURRENT=0
+            ui_step "下载 Docker 二进制包"
+            ui_download "$url" "$dest" || return 1
+            ui_step "下载 rootless-extras"
+            ui_download "$url_rootless_extras" "$dest" || return 1
+            ui_step "下载 docker-compose"
+            ui_download "$url_compose" "$dest" || return 1
+
+            mv "${dest}/docker-compose-linux-${ARCH}" "${dest}/docker-compose"
+            chmod +x "${dest}/docker-compose"
+
+            ui_summary_add ok "docker-${version}" "已下载"
+            ui_summary_add ok "docker-compose ${compose_version}" "已下载"
+            ui_summary_render "下载结果"
+            success "下载完成，存储路径：${dest}/"
         ;;
         "containerd")
             url="https://github.com/containerd/nerdctl/releases/download/v${version}/nerdctl-full-${version}-linux-${ARCH}.tar.gz"
-            wget -T 15 -c ${url} -P ${grandparent_path}/containerd/${arch}/
-            success "下载完成，存储路径：${grandparent_path}/containerd/${arch}/"
+            local dest="${grandparent_path}/containerd/${arch}"
+            mkdir -p "$dest"
+
+            ui_kv "运行时" "containerd (nerdctl-full)"
+            ui_kv "版本" "$version"
+            ui_kv "目标目录" "$dest"
+
+            STEP_TOTAL=1; STEP_CURRENT=0
+            ui_step "下载 nerdctl-full 包"
+            ui_download "$url" "$dest" || return 1
+
+            ui_summary_add ok "nerdctl-full-${version}" "已下载"
+            ui_summary_render "下载结果"
+            success "下载完成，存储路径：${dest}/"
         ;;
     esac
+}
+
+# ----- 带进度的下载封装 -----
+# 用法: ui_download <url> <目标目录>
+ui_download() {
+    local url="$1" dest="$2"
+    local file="${url##*/}"
+    ui_substep "源: $url"
+    if command -v wget >/dev/null 2>&1; then
+        # wget 原生进度条 (强制显示, 断点续传)
+        if wget -T 15 -c --progress=bar:force -P "$dest" "$url" 2>&1; then
+            ui_ok "$file"
+            return 0
+        fi
+    elif command -v curl >/dev/null 2>&1; then
+        if curl -fL --connect-timeout 15 -C - -o "${dest}/${file}" "$url"; then
+            ui_ok "$file"
+            return 0
+        fi
+    else
+        error "未找到 wget 或 curl，无法下载"
+        return 1
+    fi
+    ui_fail "下载失败: $file"
+    return 1
 }
 
 # 定义可用的版本列表

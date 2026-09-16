@@ -55,34 +55,39 @@ command_exists() {
 
 # 安装Docker
 install_docker() {
-    note "当前系统: $DISTRO $VERSION ($PKG_MANAGER)"
-    
+    ui_section "Docker 安装 · $DISTRO $VERSION ($PKG_MANAGER)"
+
+    ui_substep "创建 docker 用户组"
     # 创建docker组
     getent group docker > /dev/null || groupadd docker
-    
+
+    ui_substep "部署 systemd 服务文件"
     # 确保systemd目录存在
     local systemd_dir="/usr/lib/systemd/system"
     mkdir -p "$systemd_dir"
-    
+
     # 拷贝systemd服务文件
     cp "${parent_path}/docker.service" "${systemd_dir}/docker.service"
     cp "${parent_path}/containerd.service" "${systemd_dir}/containerd.service"
     cp "${parent_path}/docker.socket" "${systemd_dir}/docker.socket"
-    
+
     # 创建架构目录
     mkdir -p "${parent_path}/${arch}"
-    
+
     # 安装docker二进制文件
     if [ -f "${parent_path}/${arch}/${docker_package}" ]; then
-        note "使用本地Docker安装包: ${parent_path}/${arch}/${docker_package}"
-        tar --strip-components=1 -xvzf "${parent_path}/${arch}/${docker_package}" -C /usr/bin
+        ui_substep "解压 Docker 二进制文件: ${docker_package}"
+        tar --strip-components=1 -xzf "${parent_path}/${arch}/${docker_package}" -C /usr/bin
+        ui_ok "Docker 二进制文件已安装"
     else
+        ui_fail "未找到本地 Docker 安装包"
         error "当前本地不存在Docker安装包, 请执行tools/download_package.sh下载Docker安装包"
         exit 1
     fi
     # 授权执行权限
     find /usr/bin -type f -name "docker" -exec chmod 755 {} \;
-    
+
+    ui_substep "生成 /etc/docker/daemon.json (data-root: ${docker_rootdir})"
     # 配置docker daemon
     mkdir -p /etc/docker
     if [ -f "${parent_path}/daemon.json" ]; then
@@ -108,15 +113,17 @@ install_docker() {
 }
 EOF
     fi
-    
+
+    ui_substep "启动并启用 docker 服务"
     # 启动docker服务
     start_service "docker"
-    
+
     # 验证安装
     if command -v docker >/dev/null 2>&1; then
-        success "Docker安装成功，版本信息:"
+        ui_ok "Docker 安装成功"
         docker version
     else
+        ui_fail "Docker 安装失败"
         error "Docker安装失败"
         exit 1
     fi
@@ -129,19 +136,20 @@ fi
 
 # 安装docker-compose（如果未安装）
 if ! command_exists docker-compose; then
-    note "安装docker-compose"
-    
+    ui_section "docker-compose 安装"
+
     # 创建架构目录
     mkdir -p "${parent_path}/${arch}"
-    
+
     if [[ -f "${parent_path}/${arch}/docker-compose" ]]; then
-        note "使用本地docker-compose"
         cp "${parent_path}/${arch}/docker-compose" "/usr/bin/docker-compose"
         chmod a+x /usr/bin/docker-compose
+        ui_ok "docker-compose 已安装"
     else
+        ui_fail "未找到本地 docker-compose 安装包"
         error "当前本地不存在docker-compose安装包，请执行tools/download_package.sh下载docker-compose安装包"
         exit 1
     fi
 else
-    note "docker-compose已安装，跳过安装步骤"
+    ui_ok "docker-compose 已安装，跳过"
 fi
