@@ -7,29 +7,57 @@ parent_path="$(cd "$(dirname "$0")" && pwd)"
 source "$parent_path/tools/common.sh"
 
 # 定义容器版本
-declare -a dockerd_versions=("19.03.15" "20.10.24" "24.0.9" "25.0.5" "26.1.4")
-declare -a containerd_versions=("1.7.6" "1.7.7" "2.0.0" "2.0.2" "2.0.3")
+declare -a docker_versions=("19.03.15" "20.10.24" "24.0.9" "25.0.5" "26.1.4")
+declare -a nerdctl_versions=("1.7.6" "1.7.7" "2.0.0" "2.0.2" "2.0.3")
+
+# 卸载环境初始化 (欢迎横幅 + 系统检测)
+initialize() {
+    ui_banner "容器运行时卸载器" "Container Runtime Uninstaller"
+
+    ui_step "系统环境检查"
+    detect_system
+    ui_box "检测到的系统信息" \
+        "架构:     $ARCH" \
+        "发行版:   $DISTRO $VERSION" \
+        "包管理器: $PKG_MANAGER"
+}
 
 
-# 卸载容器运行时的函数
+# 卸载容器工具的函数
 uninstall_runtime() {
     local choice=$1
     local rootdir=$2
     local version=$3
-    
+
+    ui_step "卸载: $choice"
+    ui_kv "工具" "$choice"
+    ui_kv "存储路径" "$rootdir"
+    [ -n "$version" ] && ui_kv "版本" "$version"
+
+    local rc=0
     case "$choice" in
-        dockerd|d)
-            bash "$parent_path/docker/uninstall.sh" "$rootdir" "$version"
+        docker|d)
+            bash "$parent_path/docker/uninstall.sh" "$rootdir" "$version" || rc=$?
         ;;
-        containerd|c)
-            bash "$parent_path/containerd/uninstall.sh" "$rootdir" "$version"
+        nerdctl|n)
+            bash "$parent_path/containerd/uninstall.sh" "$rootdir" "$version" || rc=$?
         ;;
     esac
+
+    if [ "$rc" -eq 0 ]; then
+        ui_summary_add ok "$choice 卸载" "已移除 $rootdir"
+    else
+        ui_summary_add fail "$choice 卸载" "退出码 $rc"
+    fi
+
+    ui_summary_render "卸载结果摘要"
+    return "$rc"
 }
 
-# 显示容器运行时选项
+# 显示容器工具选项
 choice_runtime() {
-    underline "请选择您想要卸载的容器运行时: "
+    ui_step "选择要卸载的容器工具"
+    underline "请选择您想要卸载的容器工具 (docker / nerdctl): "
     PS3=$'\033[32m输入选项编号: \033[0m'
     
     select runtime in "${!runtimes[@]}" "退出"
@@ -50,10 +78,10 @@ choice_version() {
     local service="$1"
     local versions
     
-    if [[ "$service" == "dockerd" ]]; then
-        versions=("${dockerd_versions[@]}")
+    if [[ "$service" == "docker" ]]; then
+        versions=("${docker_versions[@]}")
     else
-        versions=("${containerd_versions[@]}")
+        versions=("${nerdctl_versions[@]}")
     fi
     
     underline "请选择 $service 的版本:"
@@ -75,8 +103,12 @@ choice_rootdir() {
     local rootdir="$default_dir"
     
     while true; do
-        warn "你当前选择卸载的服务是$service, 其默认数据存储路径为:${rootdir}。"
-        warn "(注意: 该操作将会删除所有${service}容器数据包括${rootdir}目录并卸载${service}服务,请谨慎操作!)"
+        ui_box "⚠ 危险操作确认" \
+            "即将卸载工具:   $service" \
+            "数据存储路径:   $rootdir" \
+            "" \
+            "该操作将删除 $rootdir 下的全部容器数据，" \
+            "并卸载 $service 相关服务，且不可恢复，请谨慎操作！"
         underline "请确认是否继续卸载删除: "
         PS3=$'\033[32m输入选项编号: \033[0m'
         
@@ -108,13 +140,16 @@ choice_rootdir() {
     done
 }
 
-# 定义一个关联数组，容器运行时选项
+# 定义一个关联数组，容器工具选项 (key 为用户使用的命令行工具名)
 declare -A runtimes
 runtimes=(
-    ["dockerd"]="/data/laiye/dockerd"
-    ["containerd"]="/data/laiye/containerd"
+    ["docker"]="/data/laiye/docker"
+    ["nerdctl"]="/data/laiye/containerd"
 )
 
-# 选择容器运行时
+# 初始化环境 (横幅 + 系统检测)
+initialize
+
+# 选择容器工具
 choice_runtime
 

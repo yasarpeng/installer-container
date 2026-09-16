@@ -43,16 +43,21 @@ if ! command -v nerdctl >/dev/null 2>&1; then
 else
     # 配置nerdctl权限
     echo "Configuring nerdctl permissions for user $USERNAME..."
+    # 注意: 不再对 nerdctl 使用 setuid (chmod +s)。
+    # setuid root 会让任意用户以 root 身份运行 nerdctl，可通过特权容器/
+    # 挂载宿主目录直接提权，属于严重安全隐患。
+    # 保持二进制为标准可执行权限，普通用户免 sudo 请使用 rootless 方案。
     if [ -e "/usr/local/bin/nerdctl" ]; then
-        chown root:"$USERNAME" /usr/local/bin/nerdctl
-        chmod 750 /usr/local/bin/nerdctl
-        chmod +s /usr/local/bin/nerdctl
+        chmod 755 /usr/local/bin/nerdctl
     fi
-    
+
     # 将用户加入containerd组(如果存在)
     if getent group containerd >/dev/null; then
         usermod -aG containerd "$USERNAME"
     fi
+
+    echo "Note: 如需普通用户免 sudo 使用 nerdctl，请以该用户身份执行 rootless 安装:"
+    echo "      containerd-rootless-setuptool.sh install"
 fi
 
 # 输出结果摘要

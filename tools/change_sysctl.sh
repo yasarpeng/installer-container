@@ -1,6 +1,14 @@
 #!/bin/bash
 # 修改前请请联系系统管理员，确认不会影响系统配置
 
+set -e
+
+# 需要 root 权限写入 /etc
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Error: 需要 root 权限运行此脚本" >&2
+    exit 1
+fi
+
 # 以下第4~32行的内容直接全部复制执行即可，无需按单个命令执行
 cat << EOF > /etc/sysctl.d/kc.conf
 net.bridge.bridge-nf-call-ip6tables = 1

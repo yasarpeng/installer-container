@@ -8,27 +8,25 @@ grandparent_path="$(cd "$(dirname "${parent_path}")" && pwd)"
 
 source $parent_path/common.sh
 
-# Check architecture
-arch="$(uname -m)"
-case $arch in
-    x86_64)
-        ARCH="amd64"
-    ;;
-    aarch64)
-        ARCH="arm64"
-    ;;
-    *)
-        error "The current hardware platform or virtual platform is not supported."
-        exit 1
-    ;;
-esac
+# 同时下载 amd64 与 arm64 两个架构，无需探测本机架构。
+# 注意两类下载源的架构命名不同:
+#   - Docker 官方静态包 / docker-compose : URL 用 x86_64 / aarch64 (与目录名一致)
+#   - nerdctl-full (GitHub release)       : 文件名用 amd64 / arm64
+# 因此 Docker 分支直接用目录名 $dir，nerdctl 分支用 arch_download_name 转换。
+declare -a TARGET_DIRS=("x86_64" "aarch64")
+arch_download_name() {
+    case "$1" in
+        x86_64)  echo "amd64" ;;
+        aarch64) echo "arm64" ;;
+    esac
+}
 
 choice_runtime() {
     while true; do
-        underline "请选择您想要安装的容器运行时: "
+        underline "请选择您想要下载的容器工具 (docker / nerdctl): "
         PS3=$'\033[32m输入选项编号: \033[0m'
         
-        local runtimes_options=("docker" "containerd")
+        local runtimes_options=("docker" "nerdctl")
         
         select runtime in "${runtimes_options[@]}" "退出"
         do
@@ -45,8 +43,8 @@ choice_runtime() {
                             break 2
                         fi
                     ;;
-                    "containerd")
-                        local selected_version=$(show_version_menu "containerd" "${CONTAINERD_VERSIONS[@]}")
+                    "nerdctl")
+                        local selected_version=$(show_version_menu "nerdctl" "${NERDCTL_VERSIONS[@]}")
                         if [[ $? -eq 0 && -n "$selected_version" ]]; then
                             downloader "$runtime" "$selected_version"
                         else
@@ -68,56 +66,79 @@ choice_runtime() {
 downloader() {
     local service=$1
     local version=$2
-    ui_banner "安装包下载器" "Package Downloader · ${arch}"
+    ui_banner "安装包下载器" "Package Downloader · amd64 + arm64"
+
     case "$service" in
         "docker")
-            url="https://download.docker.com/linux/static/stable/${arch}/docker-${version}.tgz"
-            url_rootless_extras="https://download.docker.com/linux/static/stable/${arch}/docker-rootless-extras-${version}.tgz"
-
-            # 根据 Docker 版本选择兼容的 Docker Compose 版本
-            local compose_version=$(get_compose_version "$version")
-            url_compose="https://github.com/docker/compose/releases/download/v${compose_version}/docker-compose-linux-${arch}"
-
-            local dest="${grandparent_path}/docker/${arch}"
-            mkdir -p "$dest"
+            local compose_version
+            compose_version=$(get_compose_version "$version")
 
             ui_kv "运行时" "docker"
             ui_kv "版本" "$version"
             ui_kv "compose 版本" "$compose_version"
-            ui_kv "目标目录" "$dest"
+            ui_kv "目标架构" "amd64 + arm64"
 
-            STEP_TOTAL=3; STEP_CURRENT=0
-            ui_step "下载 Docker 二进制包"
-            ui_download "$url" "$dest" || return 1
-            ui_step "下载 rootless-extras"
-            ui_download "$url_rootless_extras" "$dest" || return 1
-            ui_step "下载 docker-compose"
-            ui_download "$url_compose" "$dest" || return 1
+            local dir url url_rootless_extras url_compose dest
+            for dir in "${TARGET_DIRS[@]}"; do
+                # Docker 静态包 / rootless-extras / docker-compose 的 URL 均使用
+                # x86_64 / aarch64 命名 (与目录名一致), 不是 amd64 / arm64。
+                url="https://download.docker.com/linux/static/stable/${dir}/docker-${version}.tgz"
+                url_rootless_extras="https://download.docker.com/linux/static/stable/${dir}/docker-rootless-extras-${version}.tgz"
+                url_compose="https://github.com/docker/compose/releases/download/v${compose_version}/docker-compose-linux-${dir}"
+                dest="${grandparent_path}/docker/${dir}"
+                mkdir -p "$dest"
 
-            mv "${dest}/docker-compose-linux-${ARCH}" "${dest}/docker-compose"
-            chmod +x "${dest}/docker-compose"
+                ui_section "架构 ${dir}"
+                STEP_TOTAL=3; STEP_CURRENT=0
+                ui_step "下载 Docker 二进制包"
+                if ui_download "$url" "$dest"; then
+                    ui_summary_add ok "docker-${version} [${dir}]" "已下载"
+                else
+                    ui_summary_add fail "docker-${version} [${dir}]" "下载失败"
+                fi
+                ui_step "下载 rootless-extras"
+                if ui_download "$url_rootless_extras" "$dest"; then
+                    ui_summary_add ok "rootless-extras [${dir}]" "已下载"
+                else
+                    ui_summary_add fail "rootless-extras [${dir}]" "下载失败"
+                fi
+                ui_step "下载 docker-compose"
+                if ui_download "$url_compose" "$dest"; then
+                    mv "${dest}/docker-compose-linux-${dir}" "${dest}/docker-compose"
+                    chmod +x "${dest}/docker-compose"
+                    ui_summary_add ok "docker-compose ${compose_version} [${dir}]" "已下载"
+                else
+                    ui_summary_add fail "docker-compose ${compose_version} [${dir}]" "下载失败"
+                fi
+            done
 
-            ui_summary_add ok "docker-${version}" "已下载"
-            ui_summary_add ok "docker-compose ${compose_version}" "已下载"
             ui_summary_render "下载结果"
-            success "下载完成，存储路径：${dest}/"
+            success "下载完成，存储路径：${grandparent_path}/docker/{x86_64,aarch64}/"
         ;;
-        "containerd")
-            url="https://github.com/containerd/nerdctl/releases/download/v${version}/nerdctl-full-${version}-linux-${ARCH}.tar.gz"
-            local dest="${grandparent_path}/containerd/${arch}"
-            mkdir -p "$dest"
-
-            ui_kv "运行时" "containerd (nerdctl-full)"
+        "nerdctl")
+            ui_kv "运行时" "nerdctl (nerdctl-full)"
             ui_kv "版本" "$version"
-            ui_kv "目标目录" "$dest"
+            ui_kv "目标架构" "amd64 + arm64"
 
-            STEP_TOTAL=1; STEP_CURRENT=0
-            ui_step "下载 nerdctl-full 包"
-            ui_download "$url" "$dest" || return 1
+            local dir arch url dest
+            for dir in "${TARGET_DIRS[@]}"; do
+                arch=$(arch_download_name "$dir")
+                url="https://github.com/containerd/nerdctl/releases/download/v${version}/nerdctl-full-${version}-linux-${arch}.tar.gz"
+                dest="${grandparent_path}/containerd/${dir}"
+                mkdir -p "$dest"
 
-            ui_summary_add ok "nerdctl-full-${version}" "已下载"
+                ui_section "架构 ${dir} (${arch})"
+                STEP_TOTAL=1; STEP_CURRENT=0
+                ui_step "下载 nerdctl-full 包"
+                if ui_download "$url" "$dest"; then
+                    ui_summary_add ok "nerdctl-full-${version} [${arch}]" "已下载"
+                else
+                    ui_summary_add fail "nerdctl-full-${version} [${arch}]" "下载失败"
+                fi
+            done
+
             ui_summary_render "下载结果"
-            success "下载完成，存储路径：${dest}/"
+            success "下载完成，存储路径：${grandparent_path}/containerd/{x86_64,aarch64}/"
         ;;
     esac
 }
@@ -155,7 +176,7 @@ DOCKER_VERSIONS=(
     "27.5.1"
 )
 
-CONTAINERD_VERSIONS=(
+NERDCTL_VERSIONS=(
     "1.7.7"
     "2.0.4"
     "2.1.4"
